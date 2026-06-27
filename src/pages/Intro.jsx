@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Box, Typography, Button, IconButton, keyframes } from '@mui/material';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
 import { useNavigate } from 'react-router-dom';
-import { useGamification } from '../context/GamificationContext';
 
 const pulse = keyframes`
   0% { transform: scale(1); opacity: 0.8; }
@@ -23,8 +23,10 @@ import useSEO from '../hooks/useSEO';
 const Intro = () => {
     useSEO('Start Game', 'Enter the gamified world of CoLearn. Earn XP, finish quests, and level up.');
     const navigate = useNavigate();
-    const { soundEnabled, toggleSound } = useGamification();
     const [started, setStarted] = useState(false);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+
+    const toggleSound = () => setSoundEnabled(prev => !prev);
 
     const handleStart = () => {
         setStarted(true);

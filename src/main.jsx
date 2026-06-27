@@ -1,6 +1,5 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { SquadProvider } from './context/SquadContext';
 import { isConfigValid } from './firebase';
 import App from './App.jsx'
 import './index.css'
@@ -25,9 +24,7 @@ if (!isConfigValid) {
   root.render(
     <StrictMode>
       <GlobalErrorBoundary>
-        <SquadProvider>
-          <App />
-        </SquadProvider>
+        <App />
       </GlobalErrorBoundary>
     </StrictMode>
   );

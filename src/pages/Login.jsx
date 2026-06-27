@@ -2,10 +2,9 @@ import React, { useState } from 'react';
 import { Box, Button, Typography, Container, Fade, CircularProgress, Paper } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import { useNavigate } from 'react-router-dom';
-import { auth, googleProvider } from '../firebase';
+import { auth, db, googleProvider, isConfigValid } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import GlassCard from '../components/GlassCard';
 
 const Login = () => {
@@ -16,36 +15,60 @@ const Login = () => {
     const handleLogin = async () => {
         setLoading(true);
         setError(null);
+
+        if (!isConfigValid || !auth || !db || !googleProvider) {
+            setError('Firebase is not configured correctly. Check your .env values and restart the dev server.');
+            setLoading(false);
+            return;
+        }
+
         try {
             const result = await signInWithPopup(auth, googleProvider);
             const user = result.user;
+            await user.getIdToken();
+            const userRef = doc(db, 'users', user.uid);
+            const isNewUser = user.metadata?.creationTime === user.metadata?.lastSignInTime;
 
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-
-            if (!userDoc.exists()) {
-                await setDoc(doc(db, 'users', user.uid), {
-                    uid: user.uid,
-                    name: user.displayName,
-                    email: user.email,
-                    avatar: user.photoURL,
+            const profile = {
+                uid: user.uid,
+                name: user.displayName,
+                email: user.email,
+                avatar: user.photoURL,
+                lastLoginAt: new Date().toISOString(),
+                ...(isNewUser ? {
                     xp: 0,
                     level: 1,
                     badges: [],
                     squadId: null,
                     createdAt: new Date().toISOString()
-                });
-                localStorage.setItem('isAuthenticated', 'true');
-                navigate('/onboarding');
-            } else {
-                localStorage.setItem('isAuthenticated', 'true');
-                navigate('/dashboard');
+                } : {})
+            };
+
+            try {
+                await setDoc(userRef, profile, { merge: true });
+            } catch (writeError) {
+                if (writeError?.code === 'permission-denied') {
+                    console.warn('Firestore profile save denied. Continuing with local auth state.');
+                    localStorage.setItem('colearnLocalProfile', JSON.stringify(profile));
+                } else {
+                    throw writeError;
+                }
             }
+
+            localStorage.setItem('isAuthenticated', 'true');
+            navigate(isNewUser ? '/onboarding' : '/dashboard');
         } catch (error) {
             console.error("Login failed:", error);
-            if (error.code === 'auth/configuration-not-found') {
-                setError("Network configuration mismatch. Please verify Firebase settings.");
+            if (error?.code === 'auth/configuration-not-found' || error?.code === 'auth/unauthorized-domain') {
+                setError("Firebase auth is blocked for this domain. Add localhost to authorized domains in Firebase.");
+            } else if (error?.code === 'auth/popup-blocked') {
+                setError('Google sign-in popup was blocked by the browser. Allow popups and try again.');
+            } else if (error?.code === 'auth/popup-closed-by-user') {
+                setError('Google sign-in was cancelled before completion.');
+            } else if (error?.code === 'auth/invalid-api-key') {
+                setError('Firebase API key is invalid or missing. Check your environment variables.');
             } else {
-                setError("Authentication failed. Connection bridge lost.");
+                setError(error?.message ? `Authentication failed: ${error.message}` : 'Authentication failed.');
             }
         } finally {
             setLoading(false);

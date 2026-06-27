@@ -3,7 +3,11 @@ import { Box, Paper } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { motion } from 'framer-motion';
 
-const StyledPaper = styled(motion(Paper))(({ theme, hover, intensity = 1 }) => ({
+const MotionPaper = motion.create(Paper);
+
+const StyledPaper = styled(MotionPaper, {
+    shouldForwardProp: (prop) => prop !== 'hover' && prop !== 'intensity'
+})(({ theme, hover, intensity = 1 }) => ({
     background: theme.palette.mode === 'dark'
         ? `linear-gradient(135deg, rgba(30, 27, 75, ${0.4 * intensity}) 0%, rgba(30, 27, 75, ${0.1 * intensity}) 100%)` // Deep transparent indigo
         : `linear-gradient(135deg, rgba(255,255,255,${0.6 * intensity}) 0%, rgba(255,255,255,${0.2 * intensity}) 100%)`,

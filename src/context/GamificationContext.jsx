@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { doc, onSnapshot, updateDoc, increment, arrayUnion } from 'firebase/firestore';
@@ -18,7 +19,7 @@ export const GamificationProvider = ({ children }) => {
         coins: 100,
         energy: 100,
         maxEnergy: 100,
-        lastEnergyRefill: Date.now(),
+        lastEnergyRefill: 0,
         activityLog: [] // tracks dates of activity (e.g., "DOC-2023-10-27")
     });
 
@@ -55,33 +56,55 @@ export const GamificationProvider = ({ children }) => {
     // Auth & stats sync
     useEffect(() => {
         if (!auth) {
-            setLoading(false);
+            queueMicrotask(() => setLoading(false));
             return;
         }
-        const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+        let unsubscribeStats = () => {};
+        let cancelled = false;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            unsubscribeStats();
             setUser(currentUser);
             if (currentUser && db) {
-                const userRef = doc(db, 'users', currentUser.uid);
-                const unsubscribeStats = onSnapshot(userRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        setStats(prev => ({
-                            ...prev,
-                            ...data,
-                            energy: data.energy ?? prev.energy,
-                            coins: data.coins ?? prev.coins,
-                            activityLog: data.activityLog || prev.activityLog || []
-                        }));
+                try {
+                    await currentUser.getIdToken();
+                    if (cancelled) return;
+                    const userRef = doc(db, 'users', currentUser.uid);
+                    unsubscribeStats = onSnapshot(userRef, (docSnap) => {
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            setStats(prev => ({
+                                ...prev,
+                                ...data,
+                                energy: data.energy ?? prev.energy,
+                                coins: data.coins ?? prev.coins,
+                                activityLog: data.activityLog || prev.activityLog || []
+                            }));
+                        }
+                        setLoading(false);
+                    }, (error) => {
+                        if (error?.code !== 'permission-denied') {
+                            console.error('Error fetching gamification stats:', error);
+                        }
+                        setStats(prev => prev);
+                        setLoading(false);
+                    });
+                } catch (error) {
+                    if (error?.code !== 'permission-denied') {
+                        console.error('Failed to prepare gamification listener:', error);
                     }
                     setLoading(false);
-                });
-                return () => unsubscribeStats();
+                }
             } else {
                 setStats({ xp: 0, level: 1, streak: 1, badges: [], currentTitle: 'Novice', coins: 100, energy: 100, maxEnergy: 100, activityLog: [] });
                 setLoading(false);
             }
         });
-        return () => unsubscribeAuth();
+        return () => {
+            cancelled = true;
+            unsubscribeStats();
+            unsubscribeAuth();
+        };
     }, []);
 
     const playSound = (type) => {

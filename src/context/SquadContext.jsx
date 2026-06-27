@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { db, auth } from '../firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, query, collection, where, getDocs, limit, addDoc } from 'firebase/firestore';
@@ -18,55 +19,76 @@ export const SquadProvider = ({ children }) => {
             return;
         }
 
-        const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+        let unsubscribeUser = () => {};
+        let unsubscribeSquad = () => {};
+        let cancelled = false;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+            unsubscribeUser();
+            unsubscribeSquad();
             setUser(currentUser);
 
             if (currentUser) {
-                // Listen to user's squadId change
-                const userRef = doc(db, 'users', currentUser.uid);
-                const unsubscribeUser = onSnapshot(userRef, (userSnap) => {
-                    const userData = userSnap.data();
-                    if (userData?.squadId) {
-                        // Listen to squad data
-                        const squadRef = doc(db, 'squads', userData.squadId);
-                        const unsubscribeSquad = onSnapshot(squadRef, (squadSnap) => {
-                            if (squadSnap.exists()) {
-                                setSquad({ id: squadSnap.id, ...squadSnap.data() });
-                            } else {
-                                // Squad ID exists on user but squad doc is missing?
-                                setSquad(null);
-                            }
+                try {
+                    await currentUser.getIdToken();
+                    if (cancelled) return;
+
+                    // Listen to user's squadId change
+                    const userRef = doc(db, 'users', currentUser.uid);
+                    unsubscribeUser = onSnapshot(userRef, (userSnap) => {
+                        const userData = userSnap.data();
+                        unsubscribeSquad();
+
+                        if (userData?.squadId) {
+                            // Listen to squad data
+                            const squadRef = doc(db, 'squads', userData.squadId);
+                            unsubscribeSquad = onSnapshot(squadRef, (squadSnap) => {
+                                if (squadSnap.exists()) {
+                                    setSquad({ id: squadSnap.id, ...squadSnap.data() });
+                                } else {
+                                    // Squad ID exists on user but squad doc is missing?
+                                    setSquad(null);
+                                }
+                                setLoading(false);
+                            }, (err) => {
+                                if (err?.code !== 'permission-denied') {
+                                    console.error("Error fetching squad:", err);
+                                }
+                                setLoading(false);
+                            });
+                        } else {
+                            setSquad(null);
                             setLoading(false);
-                        }, (err) => {
-                            console.error("Error fetching squad:", err);
-                            setLoading(false);
-                        });
-                        return () => unsubscribeSquad();
-                    } else {
-                        setSquad(null);
+                        }
+                    }, (err) => {
+                        if (err?.code !== 'permission-denied') {
+                            console.error("Error fetching user data:", err);
+                        }
                         setLoading(false);
+                    });
+                } catch (error) {
+                    if (error?.code !== 'permission-denied') {
+                        console.error("Failed to prepare squad listener:", error);
                     }
-                }, (err) => {
-                    console.error("Error fetching user data:", err);
                     setLoading(false);
-                });
-                return () => unsubscribeUser();
+                }
             } else {
                 setSquad(null);
                 setLoading(false);
             }
         });
-        return () => unsubscribeAuth();
+        return () => {
+            cancelled = true;
+            unsubscribeUser();
+            unsubscribeSquad();
+            unsubscribeAuth();
+        };
     }, []);
 
     const findSquad = async (userData) => {
         if (!user) return;
         setLoading(true);
         try {
-            // Guard: User already has a squad?
-            const userSnap = await getDocs(query(collection(db, 'users'), where('uid', '==', user.uid))); // Sanity check if needed, but we trust local state usually.
-            // Better: rely on 'squad' state if we trust it, but for safety in "find" op, let's proceed.
-
             // AI Matching Simulation: Query for squads with space
             const squadsRef = collection(db, 'squads');
             const q = query(squadsRef, where('memberCount', '<', 5), limit(1));
@@ -121,7 +143,6 @@ export const SquadProvider = ({ children }) => {
 
             // To properly remove from array without exact object match, we'd need to read, filter, write.
             // Let's do the read-modify-write pattern for safety.
-            const sSnap = await getDocs(query(collection(db, 'squads'), where('__name__', '==', squad.id))); // actually just get doc
             // simplified:
             const currentSquadMembers = squad.members || [];
             const newMembers = currentSquadMembers.filter(m => m.uid !== user.uid);

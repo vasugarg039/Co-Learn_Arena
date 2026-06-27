@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Typography, Button, Container, IconButton } from '@mui/material';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import Confetti from 'react-confetti';
@@ -17,7 +18,7 @@ import SquadStep from '../components/onboarding/SquadStep';
 
 const Onboarding = () => {
     const navigate = useNavigate();
-    const { awardXP, user } = useGamification();
+    const { user } = useGamification();
     const [step, setStep] = useState(0);
     const [rerollsLeft, setRerollsLeft] = useState(1);
     const [showConfetti, setShowConfetti] = useState(false);
@@ -71,12 +72,23 @@ const Onboarding = () => {
         setLoading(true);
         try {
             const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
+            const onboardingPayload = {
                 ...userData,
                 squad: currentSquad,
                 onboarded: true,
                 xp: 100
-            });
+            };
+
+            try {
+                await updateDoc(userRef, onboardingPayload);
+            } catch (updateError) {
+                if (updateError?.code === 'permission-denied') {
+                    console.warn('Firestore onboarding update denied. Continuing with local onboarding state.');
+                    localStorage.setItem('colearnOnboardingDraft', JSON.stringify(onboardingPayload));
+                } else {
+                    throw updateError;
+                }
+            }
 
             setShowConfetti(true);
             setTimeout(() => {

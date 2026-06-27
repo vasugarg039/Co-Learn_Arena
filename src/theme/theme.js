@@ -69,7 +69,6 @@ const getThemeBase = (mode) => ({
   components: {
     MuiCssBaseline: {
       styleOverrides: `
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
         body {
           transition: background 0.3s ease;
           overflow-x: hidden;
